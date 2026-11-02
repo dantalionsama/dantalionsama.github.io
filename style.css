@@ -17,3 +17,39 @@ body{margin:0;min-height:100vh;background:var(--page);color:var(--text);font:15p
 a{color:inherit}
 .btn{display:inline-block;padding:7px 14px;border:2px solid var(--line);background:var(--panel);color:var(--text);font:600 14px var(--font);text-decoration:none;cursor:pointer}
 .btn:hover{background:var(--acc);color:var(--acc-ink)}
+
+/* ---------- tool pages (lorebook, cards): add class "page-tool" to <body> ---------- */
+.page-tool{height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.page-tool button,.page-tool input,.page-tool select,.page-tool textarea{
+  font:inherit;color:var(--text);background:var(--panel);border:2px solid var(--line);border-radius:0;padding:6px 10px}
+.page-tool button{cursor:pointer;font-weight:600}
+.page-tool button:hover:not(:disabled){background:var(--acc);color:var(--acc-ink)}
+.page-tool button:disabled{opacity:.4;cursor:default}
+.page-tool input:focus,.page-tool select:focus,.page-tool textarea:focus{outline:none;border-color:var(--acc)}
+.page-tool input[type=checkbox]{accent-color:var(--acc);width:auto;padding:0}
+.page-tool textarea{width:100%;resize:vertical;line-height:1.5}
+.page-tool ::placeholder{color:var(--mute)}
+
+.page-tool .tbar{display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--acc);color:var(--acc-ink);border-bottom:2px solid var(--line);flex-wrap:wrap}
+.page-tool .tbar .back{color:var(--acc-ink);font-size:13px;text-decoration:none;border:2px solid var(--acc-ink);padding:5px 10px;font-weight:600}
+.page-tool .tbar .back:hover{background:var(--acc-ink);color:var(--acc)}
+.page-tool .tbar .name{font:700 17px var(--font);margin:0 6px 0 4px}
+.page-tool .tbar .grow{flex:1;min-width:140px}
+.page-tool .tbar input{border-color:var(--acc-ink)}
+.page-tool .tbar button{background:var(--acc-ink);color:var(--text);border-color:var(--acc-ink)}
+.page-tool .tbar button:hover:not(:disabled){background:var(--panel);color:var(--acc)}
+.page-tool #info{font:400 12px var(--mono);color:var(--acc-ink)}
+
+.page-tool .f{margin-bottom:12px}
+.page-tool .f>label{display:block;color:var(--mute);font:400 12px var(--mono);margin-bottom:4px}
+.page-tool .f input[type=text],.page-tool .f input[type=number],.page-tool .f select{width:100%}
+.page-tool .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.page-tool .checks{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0}
+.page-tool .checks label{display:flex;gap:6px;align-items:center}
+.page-tool .hint{color:var(--mute);font:400 12px var(--mono)}
+.page-tool h3{margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--panel2);font:700 14px var(--font);color:var(--acc)}
+.page-tool details{margin-top:16px;border:2px solid var(--line);padding:8px 14px}
+.page-tool summary{cursor:pointer;font-weight:700;color:var(--acc)}
+.page-tool .danger:hover:not(:disabled){background:#e0728a;color:var(--acc-ink);border-color:var(--line)}
+.page-tool .empty{color:var(--mute);margin:80px auto;text-align:center}
+.page-tool #drop{position:fixed;inset:0;background:#000b;display:none;align-items:center;justify-content:center;font:700 22px var(--font);z-index:9}
