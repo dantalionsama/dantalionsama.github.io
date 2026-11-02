@@ -1,63 +1,19 @@
-/* Cosmic Diva theme. Colors live in variables so a second theme can swap them later. */
+/* Shared theme. Colors are variables so a second (cream) theme can swap them later. */
 :root{
-  --bg:#12061d;
-  --bg2:#1c0c2e;
-  --panel:#26123b;
-  --panel2:#321a4d;
-  --ink:#0b0314;
-  --line:#e0b3ff;
-  --text:#f4e9ff;
-  --mute:#b59bd1;
-  --acc:#ff6fbf;
-  --gold:#ffd479;
-  --shadow:#ff6fbf;
-  --radius:14px;
-  --font-title:"Cinzel Decorative","Cinzel",Georgia,serif;
-  --font-body:"Nunito",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --page:#120a1a;
+  --panel:#1c1128;
+  --panel2:#25173a;
+  --line:#e6d9f2;
+  --text:#f1eaf8;
+  --mute:#a393b8;
+  --acc:#c58be0;
+  --acc-ink:#1a0b26;
+  --gold:#f2c46b;
+  --font:"Space Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Space Mono",ui-monospace,Menlo,monospace;
 }
-
 *{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{
-  margin:0;min-height:100vh;color:var(--text);font:15px/1.55 var(--font-body);
-  background:
-    radial-gradient(1.2px 1.2px at 12% 18%,#fff 90%,transparent),
-    radial-gradient(1px 1px at 28% 72%,#ffe9ff 90%,transparent),
-    radial-gradient(1.4px 1.4px at 44% 34%,#fff 90%,transparent),
-    radial-gradient(1px 1px at 61% 85%,#ffd8f2 90%,transparent),
-    radial-gradient(1.3px 1.3px at 77% 22%,#fff 90%,transparent),
-    radial-gradient(1px 1px at 90% 58%,#f3deff 90%,transparent),
-    radial-gradient(1.2px 1.2px at 6% 90%,#fff 90%,transparent),
-    radial-gradient(60% 50% at 85% 8%,#5b1f7a66,transparent),
-    radial-gradient(50% 45% at 8% 70%,#8a1f6a44,transparent),
-    linear-gradient(180deg,var(--bg),var(--bg2));
-  background-size:420px 420px,420px 420px,420px 420px,420px 420px,420px 420px,420px 420px,420px 420px,auto,auto,auto;
-  background-attachment:fixed;
-}
-
-a{color:var(--gold)}
-
-/* window frame, the main building block */
-.win{
-  background:var(--panel);border:2px solid var(--line);border-radius:var(--radius);
-  box-shadow:6px 6px 0 var(--shadow);overflow:hidden;
-}
-.win>.bar{
-  display:flex;align-items:center;gap:8px;padding:8px 14px;
-  background:var(--panel2);border-bottom:2px solid var(--line);
-  font-weight:800;letter-spacing:.04em;
-}
-.win>.bar .dots{display:flex;gap:6px}
-.win>.bar .dots i{width:12px;height:12px;border-radius:50%;border:2px solid var(--line);background:var(--ink);display:block}
-.win>.bar .dots i:first-child{background:var(--acc)}
-.win>.bar .title{flex:1;text-align:center;font-size:13px;color:var(--gold)}
-.win>.body{padding:18px}
-
-.btn{
-  display:inline-block;padding:8px 16px;border:2px solid var(--line);border-radius:999px;
-  background:var(--ink);color:var(--text);font-weight:800;text-decoration:none;cursor:pointer;
-  box-shadow:3px 3px 0 var(--shadow);transition:transform .08s,box-shadow .08s;
-}
-.btn:hover{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--shadow)}
-
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+body{margin:0;min-height:100vh;background:var(--page);color:var(--text);font:15px/1.5 var(--font)}
+a{color:inherit}
+.btn{display:inline-block;padding:7px 14px;border:2px solid var(--line);background:var(--panel);color:var(--text);font:600 14px var(--font);text-decoration:none;cursor:pointer}
+.btn:hover{background:var(--acc);color:var(--acc-ink)}

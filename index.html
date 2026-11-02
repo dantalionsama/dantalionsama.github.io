@@ -3,100 +3,123 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Dantalion's Galactic Emporium</title>
+<title>Dantalion's Emporium</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Nunito:wght@400;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <style>
-.wrap{max-width:900px;margin:0 auto;padding:28px 18px 60px}
-.stats{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 18px;font-size:12px;color:var(--mute);margin-bottom:18px;letter-spacing:.06em;text-transform:uppercase}
-.stats b{color:var(--gold)}
+body{display:flex;align-items:center;justify-content:center;padding:24px}
+.app{display:flex;width:100%;max-width:1040px;min-height:620px;border:2px solid var(--line);background:var(--panel)}
 
-.hero{text-align:center;padding:26px 10px 18px}
-.hero .crown{font-size:34px;filter:drop-shadow(0 0 10px var(--acc))}
-.hero h1{margin:4px 0 6px;font:900 clamp(26px,6vw,46px)/1.1 var(--font-title);
-  background:linear-gradient(90deg,var(--line),var(--acc),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
-.hero p{margin:0;color:var(--mute)}
+/* sidebar */
+.side{width:150px;flex-shrink:0;border-right:2px solid var(--line);display:flex;flex-direction:column;align-items:stretch}
+.logo{padding:16px 0;text-align:center;font-size:26px;color:var(--acc);border-bottom:2px solid var(--line)}
+.nav{flex:1;display:flex;flex-direction:column}
+.nav a{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 6px;font:500 12px var(--font);text-decoration:none;color:var(--mute);border-bottom:1px solid var(--panel2)}
+.nav a svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav a:hover{color:var(--text)}
+.nav a.on{color:var(--acc-ink);background:var(--acc)}
+.nav a.off{opacity:.4;pointer-events:none}
+.nav .gap{flex:1}
 
-.marquee{overflow:hidden;white-space:nowrap;border:2px solid var(--line);border-radius:999px;background:var(--ink);margin:18px 0 26px;padding:6px 0;font-weight:800;color:var(--gold);font-size:13px}
-.marquee span{display:inline-block;padding-left:100%;animation:scroll 26s linear infinite}
-@keyframes scroll{to{transform:translateX(-100%)}}
+/* main */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;gap:16px;padding:14px 20px;background:var(--acc);color:var(--acc-ink);border-bottom:2px solid var(--line)}
+.top h1{margin:0;font:700 18px var(--font);flex:1;white-space:nowrap}
+.top input{width:100%;max-width:300px;padding:8px 12px;border:2px solid var(--acc-ink);background:var(--panel);color:var(--text);font:400 14px var(--font);border-radius:0}
+.top input::placeholder{color:var(--mute)}
+.content{padding:22px 24px;flex:1}
+.label{display:flex;justify-content:space-between;align-items:baseline;margin:0 0 12px;font:700 16px var(--font)}
+.label span{font:400 12px var(--mono);color:var(--mute)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px;margin-bottom:28px}
+.tool{display:flex;flex-direction:column;border:2px solid var(--line);background:var(--panel);text-decoration:none}
+.tool:hover{background:var(--panel2);border-color:var(--acc)}
+.tool .ico{height:96px;display:flex;align-items:center;justify-content:center;border-bottom:2px solid var(--line);background:var(--panel2);color:var(--acc)}
+.tool .ico svg{width:42px;height:42px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.tool .info{padding:12px 14px;flex:1}
+.tool h3{margin:0 0 4px;font:700 16px var(--font)}
+.tool p{margin:0;font-size:13px;color:var(--mute)}
+.tool .foot{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-top:1px solid var(--panel2);font:400 12px var(--mono);color:var(--mute)}
+.tool .foot b{font-weight:400;color:var(--text)}
+.tool.soon{border-style:dashed;opacity:.5;pointer-events:none}
+.tag{border:1px solid var(--gold);color:var(--gold);padding:0 6px;font:400 11px var(--mono)}
+.about{border:2px solid var(--line);padding:14px 16px;font-size:14px;color:var(--mute)}
+.about b{color:var(--text)}
+.hide{display:none}
 
-h2.sec{margin:30px 0 12px;font:700 18px var(--font-title);color:var(--line)}
-h2.sec small{font:700 12px var(--font-body);color:var(--mute);margin-left:8px}
-
-.tickets{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px}
-a.ticket{display:block;color:inherit;text-decoration:none;transition:transform .1s}
-a.ticket:hover{transform:translate(-2px,-2px) rotate(-.4deg)}
-a.ticket:hover .win{box-shadow:9px 9px 0 var(--shadow)}
-.ticket .no{display:flex;justify-content:space-between;font-size:12px;font-weight:800;color:var(--mute);letter-spacing:.1em;text-transform:uppercase}
-.ticket h3{margin:8px 0 4px;font:700 20px var(--font-title);color:var(--text)}
-.ticket p{margin:0 0 14px;color:var(--mute)}
-.ticket .cut{border-top:2px dashed var(--line);margin:12px -18px;opacity:.6}
-.ticket .go{font-weight:800;color:var(--gold)}
-.ticket .emoji{font-size:30px}
-
-.soon .win{border-style:dashed;box-shadow:none;opacity:.6}
-
-footer{text-align:center;margin-top:44px;color:var(--mute);font-size:13px}
+@media(max-width:700px){
+  body{padding:0}
+  .app{flex-direction:column;border-width:0}
+  .side{width:100%;flex-direction:row;border-right:0;border-bottom:2px solid var(--line)}
+  .logo{border-bottom:0;border-right:2px solid var(--line);padding:0 18px;display:flex;align-items:center}
+  .nav{flex-direction:row}
+  .nav a{flex:1;border-bottom:0;padding:10px 4px}
+  .nav .gap{display:none}
+  .top{flex-wrap:wrap}
+}
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="app">
 
-  <div class="stats">
-    <span>tools: <b>2</b></span>
-    <span>status: <b>open for service</b></span>
-    <span>updated: <b>2026-11-02</b></span>
-  </div>
+  <aside class="side">
+    <div class="logo">✦</div>
+    <nav class="nav">
+      <a class="on" href="index.html">
+        <svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>Home
+      </a>
+      <a href="lorebook.html">
+        <svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2zM4 19V5M8 7h7"/></svg>Lorebook
+      </a>
+      <a href="cards.html">
+        <svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="1"/><circle cx="12" cy="10" r="3"/><path d="M7 18c1-3 9-3 10 0"/></svg>Cards
+      </a>
+      <div class="gap"></div>
+      <a class="off" href="#">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Soon
+      </a>
+    </nav>
+  </aside>
 
-  <div class="win">
-    <div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="title">dantalion.exe</div></div>
-    <div class="body hero">
-      <div class="crown">♛</div>
-      <h1>Dantalion's Galactic Emporium</h1>
-      <p>Restaurant · maid cafe · amusement park · tools. All under one very fabulous roof.</p>
+  <div class="main">
+    <header class="top">
+      <h1>Dantalion's Emporium</h1>
+      <input id="q" type="search" placeholder="Search tools…" autocomplete="off">
+    </header>
+
+    <div class="content">
+      <div class="label">Tools <span id="count">2 available</span></div>
+      <div class="grid" id="grid">
+        <a class="tool" href="lorebook.html" data-name="lorebook editor world book json lumiverse">
+          <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2zM4 19V5M8 7h7M8 11h7"/></svg></div>
+          <div class="info"><h3>Lorebook Editor</h3><p>Edit Lumiverse world books in their own window.</p></div>
+          <div class="foot"><b>.json</b><span>Open →</span></div>
+        </a>
+        <a class="tool" href="cards.html" data-name="character card editor png charx">
+          <div class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="1"/><circle cx="12" cy="10" r="3"/><path d="M7 18c1-3 9-3 10 0"/></svg></div>
+          <div class="info"><h3>Character Cards</h3><p>Edit PNG and CHARX character cards.</p></div>
+          <div class="foot"><b>.png .charx</b><span class="tag">new</span></div>
+        </a>
+        <div class="tool soon" data-name="amusement park soon">
+          <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="11" r="7"/><path d="M12 4v14M5 11h14M7 18l-2 3M17 18l2 3"/></svg></div>
+          <div class="info"><h3>Amusement Park</h3><p>Under construction.</p></div>
+          <div class="foot"><b>soon</b><span></span></div>
+        </div>
+      </div>
+
+      <div class="about"><b>Welcome in.</b> Little tools for Lumiverse, made by Dantalion. Everything runs in your browser and nothing gets uploaded.</div>
     </div>
   </div>
 
-  <div class="marquee"><span>✦ now serving: lorebook editor ✦ fresh from the kitchen: character card editor ✦ coming soon: the amusement park ✦ please enjoy your stay, darling ✦</span></div>
-
-  <h2 class="sec">The Menu <small>pick a table</small></h2>
-  <div class="tickets">
-    <a class="ticket" href="lorebook.html">
-      <div class="win"><div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="title">order #001</div></div>
-      <div class="body">
-        <div class="no"><span>Table 01</span><span class="emoji">📖</span></div>
-        <h3>Lorebook Editor</h3>
-        <p>Edit Lumiverse world books in their own window. Import, tweak, export.</p>
-        <div class="cut"></div>
-        <span class="go">Serve me →</span>
-      </div></div>
-    </a>
-    <a class="ticket" href="cards.html">
-      <div class="win"><div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="title">order #002</div></div>
-      <div class="body">
-        <div class="no"><span>Table 02</span><span class="emoji">🎀</span></div>
-        <h3>Character Cards</h3>
-        <p>Edit PNG and CHARX cards. The staff roster, but make it editable.</p>
-        <div class="cut"></div>
-        <span class="go">Serve me →</span>
-      </div></div>
-    </a>
-    <div class="ticket soon">
-      <div class="win"><div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="title">order #003</div></div>
-      <div class="body">
-        <div class="no"><span>Table 03</span><span class="emoji">🎡</span></div>
-        <h3>Amusement Park</h3>
-        <p>Under construction. Rides to be announced.</p>
-        <div class="cut"></div>
-        <span class="go">Reserved</span>
-      </div></div>
-    </div>
-  </div>
-
-  <footer>✦ made by dantalionsama, with stardust ✦</footer>
 </div>
+<script>
+const q=document.getElementById('q'),cards=[...document.querySelectorAll('#grid .tool')],cnt=document.getElementById('count');
+q.oninput=()=>{
+  const v=q.value.trim().toLowerCase();let n=0;
+  cards.forEach(c=>{const m=!v||c.dataset.name.includes(v)||c.textContent.toLowerCase().includes(v);c.classList.toggle('hide',!m);if(m&&!c.classList.contains('soon'))n++});
+  cnt.textContent=n+' available';
+};
+</script>
 </body>
 </html>
