@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lorebook Editor</title>
+<style>
+:root{--bg:#15131a;--panel:#1e1b26;--panel2:#272332;--line:#352f44;--text:#e8e4f0;--mute:#9a93ad;--acc:#c78bd6;--warn:#e07a8f}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.4 system-ui,sans-serif;display:flex;flex-direction:column}
+button,input,select,textarea{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+button{cursor:pointer}button:hover{border-color:var(--acc)}
+input[type=checkbox]{width:auto}
+textarea{width:100%;resize:vertical}
+header{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header .grow{flex:1;min-width:160px}
+main{flex:1;display:flex;min-height:0}
+#side{width:310px;display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--panel)}
+#side .tools{display:flex;gap:6px;padding:8px}
+#side .tools input{flex:1;min-width:0}
+#list{flex:1;overflow:auto}
+.row{padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:6px;align-items:center}
+.row:hover{background:var(--panel2)}
+.row.sel{background:var(--panel2);border-left:3px solid var(--acc)}
+.row.off .t{opacity:.45;text-decoration:line-through}
+.row.over{border-top:2px solid var(--acc)}
+.row .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .m{color:var(--mute);font-size:12px}
+#ed{flex:1;overflow:auto;padding:14px 18px}
+.empty{color:var(--mute);margin:60px auto;text-align:center}
+.f{margin-bottom:10px}
+.f>label{display:block;color:var(--mute);font-size:12px;margin-bottom:3px}
+.f input[type=text],.f input[type=number],.f select{width:100%}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.checks{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0}
+.checks label{display:flex;gap:5px;align-items:center}
+h3{margin:18px 0 8px;font-size:13px;color:var(--acc);text-transform:uppercase;letter-spacing:.06em}
+details{margin-top:14px;border:1px solid var(--line);border-radius:8px;padding:6px 12px}
+summary{cursor:pointer;color:var(--acc)}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.hint{color:var(--mute);font-size:12px}
+.danger:hover{border-color:var(--warn);color:var(--warn)}
+#drop{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;font-size:22px;z-index:9}
+@media(max-width:760px){main{flex-direction:column}#side{width:100%;height:38%;border-right:0;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header>
+  <button id="imp">Import</button>
+  <input type="file" id="file" accept=".json,application/json" hidden>
+  <input id="bname" class="grow" type="text" placeholder="Lorebook name" disabled>
+  <input id="bdesc" class="grow" type="text" placeholder="Description" disabled>
+  <button id="renum" disabled title="Set order_value of every entry to its position in the list">Renumber order</button>
+  <button id="exp" disabled>Export</button>
+</header>
+<main>
+  <div id="side">
+    <div class="tools"><input id="q" type="text" placeholder="Search…"><button id="add" disabled>+ New</button></div>
+    <div id="list"></div>
+  </div>
+  <div id="ed"><div class="empty">Import a Lumiverse lorebook JSON to start<br>(or drop the file anywhere on this page)</div></div>
+</main>
+<div id="drop">Drop lorebook JSON</div>
+
+<script>
+const POSITIONS=[[0,'Before Main'],[1,'After Main'],[2,'Before AN'],[3,'After AN'],[4,'At Depth']];
+const LOGIC=[[0,'AND All Keys'],[1,'Mode 1'],[2,'Mode 2'],[3,'Mode 3']];
+const ROLES=[[null,'(none)'],['system','system'],['user','user'],['assistant','assistant']];
+// top-level field -> extensions field that mirrors it
+const SYNC={depth:'depth',probability:'probability',use_probability:'useProbability',selective_logic:'selectiveLogic',
+  group_name:'group',group_override:'group_override',group_weight:'group_weight',scan_depth:'scan_depth',
+  prevent_recursion:'prevent_recursion',exclude_recursion:'exclude_recursion',delay_until_recursion:'delay_until_recursion',
+  sticky:'sticky',cooldown:'cooldown',delay:'delay',vectorized:'vectorized',automation_id:'automation_id'};
+
+let book=null,sel=-1,dirty=false,dragFrom=-1;
+const $=id=>document.getElementById(id);
+
+function mk(tag,props={},...kids){
+  const e=document.createElement(tag);
+  for(const k in props){
+    if(k==='class')e.className=props[k];
+    else if(k.startsWith('on'))e.addEventListener(k.slice(2),props[k]);
+    else if(k in e)e[k]=props[k];
+    else e.setAttribute(k,props[k]);
+  }
+  for(const c of kids.flat())if(c!=null)e.append(c);
+  return e;
+}
+
+function newEntry(){
+  return {uid:crypto.randomUUID(),key:[],keysecondary:[],content:'',comment:'New entry',position:0,depth:4,role:null,
+    order_value:book.entries.length,selective:true,constant:false,disabled:false,group_name:'',group_override:false,group_weight:100,
+    probability:100,scan_depth:null,case_sensitive:false,match_whole_words:false,automation_id:null,
+    extensions:{position:0,depth:4,role:0,probability:100,useProbability:true,selectiveLogic:0,group:'',group_override:false,group_weight:100,
+      prevent_recursion:false,exclude_recursion:false,delay_until_recursion:false,scan_depth:null,vectorized:false,sticky:0,cooldown:0,delay:0,automation_id:''},
+    use_regex:false,prevent_recursion:false,exclude_recursion:false,delay_until_recursion:false,priority:10,sticky:0,cooldown:0,delay:0,
+    selective_logic:0,use_probability:true,vectorized:false,exclude_greeting:0,revision:1,folder:'',tags:[],outlet_name:null,wi_marker:null,wi_marker_side:null};
+}
+
+function touch(e){e.revision=(e.revision||0)+1;dirty=true}
+function setF(e,k,v){
+  e[k]=v;
+  e.extensions=e.extensions||{};
+  if(k==='position'&&'position' in e.extensions)e.extensions.position=v;
+  if(SYNC[k])e.extensions[SYNC[k]]=(k==='automation_id'&&v==null)?'':v;
+  touch(e);
+}
+
+/* ---------- import / export ---------- */
+function load(text){
+  let d;
+  try{d=JSON.parse(text)}catch(err){return alert('Not valid JSON: '+err.message)}
+  if(!d||!Array.isArray(d.entries))return alert('No "entries" array found — is this a Lumiverse world book export?');
+  if(d.type&&d.type!=='lumiverse_world_book'&&!confirm('type is "'+d.type+'", not lumiverse_world_book. Load anyway?'))return;
+  d.entries.forEach(e=>{if(typeof e.position!=='number')e.position=({before_char:0,after_char:1}[e.position]??0)});
+  book=d;sel=-1;dirty=false;
+  ['bname','bdesc','renum','exp','add'].forEach(i=>$(i).disabled=false);
+  $('bname').value=book.name||'';$('bdesc').value=book.description||'';
+  renderList();renderEd();
+}
+$('imp').onclick=()=>$('file').click();
+$('file').onchange=async e=>{const f=e.target.files[0];if(f)load(await f.text());e.target.value=''};
+addEventListener('dragover',e=>{e.preventDefault();if(e.dataTransfer.types.includes('Files'))$('drop').style.display='flex'});
+addEventListener('dragleave',e=>{if(!e.relatedTarget)$('drop').style.display='none'});
+addEventListener('drop',async e=>{
+  if(!e.dataTransfer.files.length)return;
+  e.preventDefault();$('drop').style.display='none';load(await e.dataTransfer.files[0].text());
+});
+$('bname').oninput=e=>{book.name=e.target.value;dirty=true};
+$('bdesc').oninput=e=>{book.description=e.target.value;dirty=true};
+$('renum').onclick=()=>{
+  if(!confirm('Set order_value on every entry to its current list position?'))return;
+  book.entries.forEach((e,i)=>{e.order_value=i;touch(e)});renderEd();
+};
+$('exp').onclick=()=>{
+  book.exported_at=Math.floor(Date.now()/1000);
+  const blob=new Blob([JSON.stringify(book,null,2)],{type:'application/json'});
+  const a=mk('a',{href:URL.createObjectURL(blob),download:(book.name||'lorebook').replace(/[^\w\-]+/g,'_')+'_lumiverse.json'});
+  document.body.append(a);a.click();a.remove();dirty=false;
+};
+addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+
+/* ---------- list ---------- */
+$('q').oninput=renderList;
+$('add').onclick=()=>{
+  const e=newEntry();
+  book.entries.splice(sel>=0?sel+1:book.entries.length,0,e);
+  sel=book.entries.indexOf(e);dirty=true;renderList();renderEd();
+};
+function matches(e,q){
+  if(!q)return true;q=q.toLowerCase();
+  return (e.comment||'').toLowerCase().includes(q)||e.key.join(' ').toLowerCase().includes(q)||(e.content||'').toLowerCase().includes(q);
+}
+function renderList(){
+  const L=$('list');L.replaceChildren();
+  if(!book)return;
+  const q=$('q').value.trim();
+  book.entries.forEach((e,i)=>{
+    if(!matches(e,q))return;
+    const row=mk('div',{class:'row'+(i===sel?' sel':'')+(e.disabled?' off':''),draggable:!q,
+      onclick:()=>{sel=i;renderList();renderEd()},
+      ondragstart:()=>{dragFrom=i},
+      ondragover:ev=>{ev.preventDefault();row.classList.add('over')},
+      ondragleave:()=>row.classList.remove('over'),
+      ondrop:ev=>{
+        ev.preventDefault();row.classList.remove('over');
+        if(dragFrom<0||dragFrom===i)return;
+        const [m]=book.entries.splice(dragFrom,1);
+        book.entries.splice(i,0,m);
+        sel=book.entries.indexOf(m);dragFrom=-1;dirty=true;renderList();
+      }},
+      mk('span',{},e.constant?'🔵':e.disabled?'⚪':'🟢'),
+      mk('span',{class:'t'},e.comment||'(untitled)'),
+      mk('span',{class:'m'},e.key.length?e.key.length+' key'+(e.key.length>1?'s':''):''));
+    L.append(row);
+  });
+}
+
+/* ---------- editor ---------- */
+function fText(label,e,k,opts={}){
+  const inp=mk('input',{type:'text',value:e[k]??'',oninput:ev=>{setF(e,k,opts.nullEmpty&&!ev.target.value?null:ev.target.value);if(k==='comment')renderList()}});
+  return mk('div',{class:'f'},mk('label',{},label),inp);
+}
+function fNum(label,e,k,opts={}){
+  const inp=mk('input',{type:'number',value:e[k]??'',placeholder:opts.nullable?'null':'',
+    oninput:ev=>{const v=ev.target.value;setF(e,k,v===''&&opts.nullable?null:Number(v))}});
+  return mk('div',{class:'f'},mk('label',{},label),inp);
+}
+function fSel(label,e,k,options,after){
+  const s=mk('select',{onchange:ev=>{setF(e,k,options[ev.target.selectedIndex][0]);if(after)after()}},
+    options.map(([v,l])=>mk('option',{selected:v===e[k]},l)));
+  return mk('div',{class:'f'},mk('label',{},label),s);
+}
+function fChk(label,e,k,after){
+  return mk('label',{},mk('input',{type:'checkbox',checked:!!e[k],onchange:ev=>{setF(e,k,ev.target.checked);if(after)after()}}),label);
+}
+function fTags(label,e,k){
+  const inp=mk('input',{type:'text',value:(e[k]||[]).join(', '),
+    oninput:ev=>{setF(e,k,ev.target.value.split(',').map(s=>s.trim()).filter(Boolean));if(k==='key')renderList()}});
+  return mk('div',{class:'f'},mk('label',{},label+' (comma-separated)'),inp);
+}
+
+function renderEd(){
+  const ed=$('ed');ed.replaceChildren();
+  const e=book&&book.entries[sel];
+  if(!e){ed.append(mk('div',{class:'empty'},book?'Pick an entry on the left':'Import a Lumiverse lorebook JSON to start'));return}
+
+  const posOpts=POSITIONS.some(p=>p[0]===e.position)?POSITIONS:[...POSITIONS,[e.position,'Other ('+e.position+')']];
+  const tok=mk('span',{class:'hint'});
+  const upd=()=>tok.textContent=(e.content||'').length+' chars · ~'+Math.ceil((e.content||'').length/4)+' tokens';
+
+  const ta=mk('textarea',{rows:16,value:e.content||'',oninput:ev=>{
+    setF(e,'content',ev.target.value);
+    for(const k of Object.keys(e.extensions||{}))if(k.startsWith('_lumiverse_token_count'))delete e.extensions[k];
+    upd();
+  }});
+
+  ed.append(
+    mk('div',{class:'bar'},
+      mk('button',{onclick:()=>move(-1)},'↑ Up'),
+      mk('button',{onclick:()=>move(1)},'↓ Down'),
+      mk('button',{onclick:dup},'Duplicate'),
+      mk('button',{class:'danger',onclick:del},'Delete'),
+      mk('span',{class:'hint'},'uid '+e.uid)),
+    fText('Title / comment',e,'comment'),
+    fTags('Primary keys',e,'key'),
+    fTags('Secondary keys',e,'keysecondary'),
+    mk('div',{class:'f'},mk('label',{},'Content'),ta,tok),
+    mk('h3',{},'State'),
+    mk('div',{class:'checks'},fChk('Constant',e,'constant',renderList),fChk('Disabled',e,'disabled',renderList),fChk('Selective',e,'selective'),
+      fChk('Use regex',e,'use_regex'),fChk('Case sensitive',e,'case_sensitive'),fChk('Match whole words',e,'match_whole_words')),
+    mk('div',{class:'grid'},
+      fSel('Selective logic',e,'selective_logic',LOGIC),
+      fNum('Probability %',e,'probability'),
+      mk('div',{class:'f'},mk('label',{},'\u00a0'),mk('div',{class:'checks'},fChk('Use probability',e,'use_probability'))),
+      fNum('Scan depth',e,'scan_depth',{nullable:true})),
+    mk('h3',{},'Placement'),
+    mk('div',{class:'grid'},
+      fSel('Position',e,'position',posOpts,renderEd),
+      e.position===4?fNum('Depth',e,'depth'):null,
+      fSel('Role',e,'role',ROLES),
+      fNum('Order value',e,'order_value'),
+      fNum('Priority',e,'priority')),
+    mk('details',{},mk('summary',{},'Advanced'),
+      mk('h3',{},'Groups'),
+      mk('div',{class:'grid'},fText('Group name',e,'group_name'),fNum('Group weight',e,'group_weight')),
+      mk('div',{class:'checks'},fChk('Group override',e,'group_override')),
+      mk('h3',{},'Recursion'),
+      mk('div',{class:'checks'},fChk('Prevent recursion',e,'prevent_recursion'),fChk('Exclude recursion',e,'exclude_recursion'),fChk('Delay until recursion',e,'delay_until_recursion')),
+      mk('h3',{},'Timing'),
+      mk('div',{class:'grid'},fNum('Sticky',e,'sticky'),fNum('Cooldown',e,'cooldown'),fNum('Delay',e,'delay')),
+      mk('h3',{},'Other'),
+      mk('div',{class:'grid'},fText('Folder',e,'folder'),fTags('Tags',e,'tags'),fText('Automation ID',e,'automation_id',{nullEmpty:true}),fText('Outlet name',e,'outlet_name',{nullEmpty:true})),
+      mk('div',{class:'checks'},fChk('Vectorized',e,'vectorized'))));
+  upd();
+}
+
+function move(d){
+  const j=sel+d;if(j<0||j>=book.entries.length)return;
+  [book.entries[sel],book.entries[j]]=[book.entries[j],book.entries[sel]];
+  sel=j;dirty=true;renderList();
+}
+function dup(){
+  const c=JSON.parse(JSON.stringify(book.entries[sel]));
+  c.uid=crypto.randomUUID();c.comment=(c.comment||'')+' (copy)';
+  book.entries.splice(sel+1,0,c);sel++;dirty=true;renderList();renderEd();
+}
+function del(){
+  const e=book.entries[sel];
+  if(!confirm('Delete "'+(e.comment||'untitled')+'"?'))return;
+  book.entries.splice(sel,1);sel=Math.min(sel,book.entries.length-1);dirty=true;renderList();renderEd();
+}
+</script>
+</body>
+</html>

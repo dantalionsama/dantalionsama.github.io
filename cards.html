@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Character Card Editor</title>
+<style>
+:root{--bg:#15131a;--panel:#1e1b26;--panel2:#272332;--line:#352f44;--text:#e8e4f0;--mute:#9a93ad;--acc:#c78bd6;--warn:#e07a8f}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.4 system-ui,sans-serif;display:flex;flex-direction:column}
+button,input,select,textarea{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+button{cursor:pointer}button:hover{border-color:var(--acc)}
+button:disabled{opacity:.4;cursor:default}
+textarea{width:100%;resize:vertical}
+header{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header a{color:var(--acc);text-decoration:none;margin-right:6px}
+header .grow{flex:1}
+#info{color:var(--mute);font-size:12px}
+#ed{flex:1;overflow:auto;padding:14px 18px;max-width:900px;width:100%;margin:0 auto}
+.empty{color:var(--mute);margin:80px auto;text-align:center}
+.f{margin-bottom:12px}
+.f>label{display:block;color:var(--mute);font-size:12px;margin-bottom:3px}
+.f input[type=text]{width:100%}
+.hint{color:var(--mute);font-size:12px}
+h3{margin:22px 0 8px;font-size:13px;color:var(--acc);text-transform:uppercase;letter-spacing:.06em}
+.alt{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px;background:var(--panel)}
+.alt .top{display:flex;gap:8px;margin-bottom:6px;align-items:center}
+.alt .top input{flex:1}
+.danger:hover{border-color:var(--warn);color:var(--warn)}
+#drop{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;font-size:22px;z-index:9}
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">← Toolbox</a>
+  <button id="imp">Import</button>
+  <button id="blank">New blank</button>
+  <input type="file" id="file" accept=".png,.charx,.json" hidden>
+  <span id="info" class="grow">PNG, CHARX or card JSON</span>
+  <button id="expJson" disabled>Export JSON</button>
+  <button id="exp" disabled>Export</button>
+</header>
+<div id="ed"><div class="empty">Import a character card (or drop it anywhere on this page)</div></div>
+<div id="drop">Drop character card</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+/*==HELPERS==*/
+const SIG=[137,80,78,71,13,10,26,10];
+const CRC_T=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+function crc32(b){let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=CRC_T[(c^b[i])&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0}
+function b64enc(str){const u=new TextEncoder().encode(str);let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)}
+function b64dec(b){const s=atob(b);const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return new TextDecoder().decode(u)}
+function pngChunks(bytes){
+  for(let i=0;i<8;i++)if(bytes[i]!==SIG[i])throw new Error('Not a PNG file');
+  const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),out=[];let p=8;
+  while(p+12<=bytes.length){
+    const len=dv.getUint32(p),type=String.fromCharCode(...bytes.subarray(p+4,p+8));
+    out.push({type,data:bytes.subarray(p+8,p+8+len),raw:bytes.subarray(p,p+12+len)});
+    p+=12+len;if(type==='IEND')break;
+  }
+  return out;
+}
+function textChunk(c){ // -> [keyword,value] for tEXt / iTXt (uncompressed), else null
+  const d=c.data,z=d.indexOf(0);if(z<1)return null;
+  const key=String.fromCharCode(...d.subarray(0,z));
+  if(c.type==='tEXt')return[key,String.fromCharCode(...d.subarray(z+1))];
+  if(c.type==='iTXt'){
+    if(d[z+1]!==0)return null;
+    let p=z+3;p=d.indexOf(0,p)+1;p=d.indexOf(0,p)+1;
+    return[key,new TextDecoder().decode(d.subarray(p))];
+  }
+  return null;
+}
+function readPngCard(bytes){
+  let v2=null;
+  for(const c of pngChunks(bytes)){
+    const t=textChunk(c);if(!t)continue;
+    if(t[0]==='ccv3')return JSON.parse(b64dec(t[1]));
+    if(t[0]==='chara')v2=JSON.parse(b64dec(t[1]));
+  }
+  if(v2)return v2;
+  throw new Error('No character data found in this PNG');
+}
+function makeText(key,val){
+  const d=new Uint8Array(key.length+1+val.length);
+  for(let i=0;i<key.length;i++)d[i]=key.charCodeAt(i);
+  for(let i=0;i<val.length;i++)d[key.length+1+i]=val.charCodeAt(i);
+  const body=new Uint8Array(4+d.length);
+  body.set([116,69,88,116]);body.set(d,4);
+  const out=new Uint8Array(12+d.length),dv=new DataView(out.buffer);
+  dv.setUint32(0,d.length);out.set(body,4);dv.setUint32(8+d.length,crc32(body));
+  return out;
+}
+function writePngCard(bytes,v3json,v2json){
+  const parts=[Uint8Array.from(SIG)];
+  for(const c of pngChunks(bytes)){
+    if(c.type==='IEND'){parts.push(makeText('chara',b64enc(v2json)),makeText('ccv3',b64enc(v3json)))}
+    const t=textChunk(c);
+    if(t&&(t[0]==='chara'||t[0]==='ccv3'))continue;
+    parts.push(c.raw);
+  }
+  return new Blob(parts,{type:'image/png'});
+}
+/*==END==*/
+
+const $=id=>document.getElementById(id);
+function mk(tag,props={},...kids){
+  const e=document.createElement(tag);
+  for(const k in props){
+    if(k==='class')e.className=props[k];
+    else if(k.startsWith('on'))e.addEventListener(k.slice(2),props[k]);
+    else if(k in e)e[k]=props[k];
+    else e.setAttribute(k,props[k]);
+  }
+  for(const c of kids.flat())if(c!=null)e.append(c);
+  return e;
+}
+
+let card=null,fmt='json',zip=null,pngBytes=null,fname='character',dirty=false;
+const FIELDS=[['description','Description',10],['personality','Personality',4],['scenario','Scenario',4],
+  ['first_mes','First message',8],['mes_example','Example messages',6],
+  ['system_prompt','System prompt',4],['post_history_instructions','Post-history instructions',3],['creator_notes','Creator notes',4]];
+
+function blankCard(){
+  return {spec:'chara_card_v3',spec_version:'3.0',data:{name:'New Character',description:'',personality:'',scenario:'',first_mes:'',mes_example:'',
+    creator:'',creator_notes:'',system_prompt:'',post_history_instructions:'',tags:[],alternate_greetings:[],extensions:{}}};
+}
+function setCard(c,format,name){
+  if(!c||typeof c.data!=='object'){alert('This doesn\'t look like a V2/V3 character card (no "data" object).');return false}
+  card=c;fmt=format;fname=name||c.data.name||'character';dirty=false;
+  $('exp').disabled=false;$('expJson').disabled=false;
+  $('exp').textContent=format==='json'?'Export JSON':'Export '+format.toUpperCase();
+  $('expJson').style.display=format==='json'?'none':'';
+  $('info').textContent=fname+' · '+(card.spec||'?')+' · '+format.toUpperCase();
+  render();return true;
+}
+
+/* ---------- import ---------- */
+async function load(file){
+  const n=file.name.toLowerCase(),base=file.name.replace(/\.[^.]+$/,'');
+  try{
+    if(n.endsWith('.png')){
+      const b=new Uint8Array(await file.arrayBuffer());
+      const c=readPngCard(b);pngBytes=b;zip=null;setCard(c,'png',base);
+    }else if(n.endsWith('.charx')||n.endsWith('.zip')){
+      if(typeof JSZip==='undefined')return alert('JSZip failed to load (offline?). CHARX needs it.');
+      const z=await JSZip.loadAsync(await file.arrayBuffer());
+      const f=z.file('card.json');if(!f)return alert('No card.json inside this CHARX.');
+      const c=JSON.parse(await f.async('string'));zip=z;pngBytes=null;setCard(c,'charx',base);
+    }else{
+      const c=JSON.parse(await file.text());zip=null;pngBytes=null;setCard(c,'json',base);
+    }
+  }catch(err){alert('Could not read that file: '+err.message)}
+}
+$('imp').onclick=()=>$('file').click();
+$('file').onchange=async e=>{const f=e.target.files[0];if(f)await load(f);e.target.value=''};
+addEventListener('dragover',e=>{e.preventDefault();if(e.dataTransfer.types.includes('Files'))$('drop').style.display='flex'});
+addEventListener('dragleave',e=>{if(!e.relatedTarget)$('drop').style.display='none'});
+addEventListener('drop',async e=>{
+  if(!e.dataTransfer.files.length)return;
+  e.preventDefault();$('drop').style.display='none';await load(e.dataTransfer.files[0]);
+});
+$('blank').onclick=()=>{
+  if(dirty&&!confirm('Discard unsaved changes?'))return;
+  zip=typeof JSZip!=='undefined'?new JSZip():null;pngBytes=null;
+  setCard(blankCard(),zip?'charx':'json','new_character');
+};
+addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+
+/* ---------- export ---------- */
+function download(blob,name){
+  const a=mk('a',{href:URL.createObjectURL(blob),download:name});
+  document.body.append(a);a.click();a.remove();
+}
+const safe=()=>(card.data.name||fname).replace(/[^\w\-]+/g,'_');
+$('expJson').onclick=()=>download(new Blob([JSON.stringify(card,null,2)],{type:'application/json'}),safe()+'.json');
+$('exp').onclick=async()=>{
+  try{
+    if(fmt==='png'){
+      const v2={...card,spec:'chara_card_v2',spec_version:'2.0'};
+      download(writePngCard(pngBytes,JSON.stringify(card),JSON.stringify(v2)),safe()+'.png');
+    }else if(fmt==='charx'){
+      zip.file('card.json',JSON.stringify(card,null,2));
+      download(await zip.generateAsync({type:'blob',compression:'DEFLATE'}),safe()+'.charx');
+    }else $('expJson').onclick();
+    dirty=false;
+  }catch(err){alert('Export failed: '+err.message)}
+};
+
+/* ---------- editor ---------- */
+const D=()=>card.data;
+const touch=()=>{dirty=true};
+const gt=()=>{const g=D().extensions&&D().extensions.greeting_tools;return g&&typeof g==='object'?g:null};
+function altTitle(i){const g=gt();const id=g&&g.indexMap&&g.indexMap[i];return id&&g.greetings&&g.greetings[id]?g.greetings[id].title||'':null}
+function setAltTitle(i,v){const g=gt();const id=g.indexMap[i];g.greetings[id].title=v}
+
+function tokens(s){return Math.ceil((s||'').length/4)}
+function area(key,label,rows){
+  const hint=mk('span',{class:'hint'});
+  const upd=()=>hint.textContent=(D()[key]||'').length+' chars · ~'+tokens(D()[key])+' tokens';
+  const ta=mk('textarea',{rows,value:D()[key]??'',oninput:e=>{D()[key]=e.target.value;touch();upd()}});
+  upd();return mk('div',{class:'f'},mk('label',{},label),ta,hint);
+}
+function text(key,label){
+  return mk('div',{class:'f'},mk('label',{},label),mk('input',{type:'text',value:D()[key]??'',oninput:e=>{D()[key]=e.target.value;touch()}}));
+}
+
+function render(){
+  const ed=$('ed');ed.replaceChildren();
+  if(!card)return;
+  const d=D();
+  ed.append(
+    text('name','Name'),
+    mk('div',{class:'f'},mk('label',{},'Tags (comma-separated)'),
+      mk('input',{type:'text',value:(d.tags||[]).join(', '),oninput:e=>{d.tags=e.target.value.split(',').map(s=>s.trim()).filter(Boolean);touch()}})),
+    text('creator','Creator'));
+  for(const[k,l,r]of FIELDS.slice(0,1))ed.append(area(k,l,r));
+  for(const[k,l,r]of FIELDS.slice(1,3))ed.append(area(k,l,r));
+
+  ed.append(mk('h3',{},'Greetings'));
+  const g=gt();
+  if(g&&g.mainGreeting)ed.append(mk('div',{class:'f'},mk('label',{},'Main greeting title'),
+    mk('input',{type:'text',value:g.mainGreeting.title||'',oninput:e=>{g.mainGreeting.title=e.target.value;touch()}})));
+  ed.append(area('first_mes','First message',8));
+  const altBox=mk('div');ed.append(mk('h3',{},'Alternate greetings'),altBox,
+    mk('button',{onclick:()=>{(d.alternate_greetings=d.alternate_greetings||[]).push('');touch();renderAlts(altBox)}},'+ Add greeting'));
+  renderAlts(altBox);
+
+  ed.append(mk('h3',{},'More'));
+  for(const[k,l,r]of FIELDS.slice(3))ed.append(area(k,l,r));
+
+  const cb=d.character_book;
+  if(cb&&Array.isArray(cb.entries))ed.append(mk('p',{class:'hint'},'Embedded lorebook: '+cb.entries.length+' entries (kept as-is; edit it in the Lorebook Editor).'));
+  if(zip)ed.append(mk('p',{class:'hint'},'CHARX contains '+Object.keys(zip.files).filter(n=>!zip.files[n].dir).length+' file(s); all kept on export.'));
+}
+
+function renderAlts(box){
+  box.replaceChildren();
+  const arr=D().alternate_greetings||[];
+  arr.forEach((txt,i)=>{
+    const t=altTitle(i);
+    const ta=mk('textarea',{rows:5,value:txt,oninput:e=>{arr[i]=e.target.value;touch()}});
+    box.append(mk('div',{class:'alt'},
+      mk('div',{class:'top'},mk('b',{},'#'+(i+1)),
+        t===null?mk('span',{class:'hint grow'},''):mk('input',{type:'text',placeholder:'Title',value:t,oninput:e=>{setAltTitle(i,e.target.value);touch()}}),
+        mk('button',{class:'danger',onclick:()=>delAlt(i,box)},'Delete')),
+      ta));
+  });
+  if(!arr.length)box.append(mk('p',{class:'hint'},'None yet.'));
+}
+function delAlt(i,box){
+  if(!confirm('Delete greeting #'+(i+1)+'?'))return;
+  const d=D(),g=gt();
+  d.alternate_greetings.splice(i,1);
+  if(g&&g.indexMap){
+    const old=g.indexMap,nm={};
+    if(old[i]&&g.greetings)delete g.greetings[old[i]];
+    for(const k of Object.keys(old)){const n=+k;if(n<i)nm[n]=old[k];else if(n>i)nm[n-1]=old[k]}
+    g.indexMap=nm;
+  }
+  touch();renderAlts(box);
+}
+</script>
+</body>
+</html>
