@@ -9,10 +9,26 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <style>
-#ed{flex:1;overflow:auto;padding:20px 24px;max-width:900px;width:100%;margin:0 auto}
+#ed{flex:1;overflow:auto;padding:20px 24px}
+.layout{display:flex;gap:24px;max-width:1100px;margin:0 auto;align-items:flex-start}
+.pic{width:260px;flex-shrink:0;position:sticky;top:0}
+.pic .big{display:block;width:100%;max-height:440px;object-fit:contain;border:2px solid var(--line);background:var(--panel2)}
+.pic .noimg{height:200px;display:flex;align-items:center;justify-content:center;border:2px dashed var(--line);color:var(--mute);font:400 12px var(--mono)}
+.pic .thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.pic .thumbs img{width:100%;aspect-ratio:1;object-fit:cover;border:2px solid var(--panel2);cursor:pointer}
+.pic .thumbs img:hover{border-color:var(--mute)}
+.pic .thumbs img.on{border-color:var(--acc)}
+.pic .cap{margin-top:10px;font:700 16px var(--font);overflow-wrap:anywhere}
+.pic .hint{margin-top:4px}
+.pane{flex:1;min-width:0}
+.tabs{display:flex;border:2px solid var(--line);margin-bottom:18px}
+.tabs button{flex:1;border:0;border-right:2px solid var(--line);padding:9px 6px}
+.tabs button:last-child{border-right:0}
+.tabs button.on{background:var(--acc);color:var(--acc-ink)}
 .alt{border:2px solid var(--line);padding:12px;margin-bottom:12px;background:var(--panel)}
 .alt .top{display:flex;gap:8px;margin-bottom:8px;align-items:center}
 .alt .top input{flex:1}
+@media(max-width:760px){.layout{flex-direction:column}.pic{width:100%;position:static}.pic .big{max-height:300px}}
 </style>
 </head>
 <body class="page-tool">
@@ -50,7 +66,7 @@ function pngChunks(bytes){
 function textChunk(c){ // -> [keyword,value] for tEXt / iTXt (uncompressed), else null
   const d=c.data,z=d.indexOf(0);if(z<1)return null;
   const key=String.fromCharCode(...d.subarray(0,z));
-  if(c.type==='tEXt')return[key,String.fromCharCode(...d.subarray(z+1))];
+  if(c.type==='tEXt')return[key,new TextDecoder('latin1').decode(d.subarray(z+1))];
   if(c.type==='iTXt'){
     if(d[z+1]!==0)return null;
     let p=z+3;p=d.indexOf(0,p)+1;p=d.indexOf(0,p)+1;
@@ -137,6 +153,7 @@ async function load(file){
     }else{
       const c=JSON.parse(await file.text());zip=null;pngBytes=null;setCard(c,'json',base);
     }
+    await loadImages();
   }catch(err){alert('Could not read that file: '+err.message)}
 }
 $('imp').onclick=()=>$('file').click();
@@ -151,6 +168,7 @@ $('blank').onclick=()=>{
   if(dirty&&!confirm('Discard unsaved changes?'))return;
   zip=typeof JSZip!=='undefined'?new JSZip():null;pngBytes=null;
   setCard(blankCard(),zip?'charx':'json','new_character');
+  loadImages();
 };
 addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
 
@@ -192,33 +210,68 @@ function text(key,label){
   return mk('div',{class:'f'},mk('label',{},label),mk('input',{type:'text',value:D()[key]??'',oninput:e=>{D()[key]=e.target.value;touch()}}));
 }
 
+let tab='profile',imgs=[],cur=0;
+const TABS=[['profile','Profile'],['desc','Description'],['greet','Greetings'],['prompts','Prompts']];
+
+async function loadImages(){
+  imgs.forEach(i=>URL.revokeObjectURL(i.url));imgs=[];cur=0;
+  if(fmt==='png'&&pngBytes){
+    imgs=[{name:fname+'.png',url:URL.createObjectURL(new Blob([pngBytes],{type:'image/png'}))}];
+  }else if(fmt==='charx'&&zip){
+    const names=Object.keys(zip.files).filter(n=>!zip.files[n].dir&&/^assets\/.*\.(png|jpe?g|webp|gif)$/i.test(n));
+    const isMain=n=>/icon\/image\/main\./.test(n)?1:0;
+    names.sort((a,b)=>(isMain(b)-isMain(a))||a.localeCompare(b));
+    for(const n of names){
+      const ext=n.split('.').pop().toLowerCase();
+      const blob=new Blob([await zip.file(n).async('uint8array')],{type:'image/'+(ext==='jpg'?'jpeg':ext)});
+      imgs.push({name:n.replace(/^assets\//,''),url:URL.createObjectURL(blob)});
+    }
+  }
+  render();
+}
+
+function picPanel(){
+  const p=mk('aside',{class:'pic'}),im=imgs[cur];
+  p.append(im?mk('img',{class:'big',src:im.url,alt:D().name||''}):mk('div',{class:'noimg'},'No image'));
+  if(imgs.length>1)p.append(mk('div',{class:'thumbs'},imgs.map((x,i)=>
+    mk('img',{src:x.url,title:x.name,class:i===cur?'on':'',onclick:()=>{cur=i;render()}}))));
+  p.append(mk('div',{class:'cap'},D().name||'Unnamed'));
+  if(imgs.length>1)p.append(mk('div',{class:'hint'},'Preview only. Images are kept as-is.'));
+  return p;
+}
+
 function render(){
   const ed=$('ed');ed.replaceChildren();
   if(!card)return;
-  const d=D();
-  ed.append(
-    text('name','Name'),
-    mk('div',{class:'f'},mk('label',{},'Tags (comma-separated)'),
-      mk('input',{type:'text',value:(d.tags||[]).join(', '),oninput:e=>{d.tags=e.target.value.split(',').map(s=>s.trim()).filter(Boolean);touch()}})),
-    text('creator','Creator'));
-  for(const[k,l,r]of FIELDS.slice(0,1))ed.append(area(k,l,r));
-  for(const[k,l,r]of FIELDS.slice(1,3))ed.append(area(k,l,r));
-
-  ed.append(mk('h3',{},'Greetings'));
-  const g=gt();
-  if(g&&g.mainGreeting)ed.append(mk('div',{class:'f'},mk('label',{},'Main greeting title'),
-    mk('input',{type:'text',value:g.mainGreeting.title||'',oninput:e=>{g.mainGreeting.title=e.target.value;touch()}})));
-  ed.append(area('first_mes','First message',8));
-  const altBox=mk('div');ed.append(mk('h3',{},'Alternate greetings'),altBox,
-    mk('button',{onclick:()=>{(d.alternate_greetings=d.alternate_greetings||[]).push('');touch();renderAlts(altBox)}},'+ Add greeting'));
-  renderAlts(altBox);
-
-  ed.append(mk('h3',{},'More'));
-  for(const[k,l,r]of FIELDS.slice(3))ed.append(area(k,l,r));
-
-  const cb=d.character_book;
-  if(cb&&Array.isArray(cb.entries))ed.append(mk('p',{class:'hint'},'Embedded lorebook: '+cb.entries.length+' entries (kept as-is; edit it in the Lorebook Editor).'));
-  if(zip)ed.append(mk('p',{class:'hint'},'CHARX contains '+Object.keys(zip.files).filter(n=>!zip.files[n].dir).length+' file(s); all kept on export.'));
+  const d=D(),body=mk('div');
+  if(tab==='profile'){
+    body.append(
+      text('name','Name'),
+      mk('div',{class:'f'},mk('label',{},'Tags (comma-separated)'),
+        mk('input',{type:'text',value:(d.tags||[]).join(', '),oninput:e=>{d.tags=e.target.value.split(',').map(s=>s.trim()).filter(Boolean);touch()}})),
+      text('creator','Creator'),
+      area('creator_notes','Creator notes',6));
+    const cb=d.character_book;
+    if(cb&&Array.isArray(cb.entries))body.append(mk('p',{class:'hint'},'Embedded lorebook: '+cb.entries.length+' entries (kept as-is; edit it in the Lorebook Editor).'));
+    if(zip)body.append(mk('p',{class:'hint'},'CHARX contains '+Object.keys(zip.files).filter(n=>!zip.files[n].dir).length+' file(s); all kept on export.'));
+  }else if(tab==='desc'){
+    body.append(area('description','Description',14),area('personality','Personality',5),area('scenario','Scenario',5));
+  }else if(tab==='greet'){
+    const g=gt();
+    if(g&&g.mainGreeting)body.append(mk('div',{class:'f'},mk('label',{},'Main greeting title'),
+      mk('input',{type:'text',value:g.mainGreeting.title||'',oninput:e=>{g.mainGreeting.title=e.target.value;touch()}})));
+    body.append(area('first_mes','First message',9));
+    const altBox=mk('div');
+    body.append(mk('h3',{},'Alternate greetings'),altBox,
+      mk('button',{onclick:()=>{(d.alternate_greetings=d.alternate_greetings||[]).push('');touch();renderAlts(altBox)}},'+ Add greeting'));
+    renderAlts(altBox);
+  }else{
+    body.append(area('mes_example','Example messages',9),area('system_prompt','System prompt',6),area('post_history_instructions','Post-history instructions',5));
+  }
+  const pane=mk('div',{class:'pane'},
+    mk('div',{class:'tabs'},TABS.map(([k,l])=>mk('button',{class:k===tab?'on':'',onclick:()=>{tab=k;render();ed.scrollTop=0}},l))),
+    body);
+  ed.append(mk('div',{class:'layout'},picPanel(),pane));
 }
 
 function renderAlts(box){
