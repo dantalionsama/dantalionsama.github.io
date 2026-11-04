@@ -18,6 +18,17 @@
 .pic .thumbs img{width:100%;aspect-ratio:1;object-fit:cover;border:2px solid var(--panel2);cursor:pointer}
 .pic .thumbs img:hover{border-color:var(--mute)}
 .pic .thumbs img.on{border-color:var(--acc)}
+.pic .imgbtns{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.pic .imgbtns button{flex:1;padding:6px 8px;font-size:13px;white-space:nowrap}
+.bgrow{display:flex;gap:10px;align-items:center}
+.bgrow select{flex:1}
+.bgprev{width:56px;height:56px;object-fit:cover;border:2px solid var(--line)}
+.alt .top button{padding:5px 9px}
+.pic .f{margin-top:10px}
+.banner{border:2px solid var(--gold);padding:10px 14px;margin:0 auto 16px;max-width:1100px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.banner span{flex:1;min-width:220px;color:var(--gold)}
+.lorebox{border:2px solid var(--line);padding:16px;background:var(--panel)}
+.row2{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .pic .cap{margin-top:10px;font:700 16px var(--font);overflow-wrap:anywhere}
 .pic .hint{margin-top:4px}
 .pane{flex:1;min-width:0}
@@ -134,13 +145,14 @@ function setCard(c,format,name){
   $('exp').disabled=false;$('expJson').disabled=false;
   $('exp').textContent=format==='json'?'Export JSON':'Export '+format.toUpperCase();
   $('expJson').style.display=format==='json'?'none':'';
-  $('info').textContent=fname+' · '+(card.spec||'?')+' · '+format.toUpperCase();
+  infoBase=fname+' · '+(card.spec||'?')+' · '+format.toUpperCase();updInfo();pendingDraft=findDraft();
   render();return true;
 }
 
 /* ---------- import ---------- */
 async function load(file){
   const n=file.name.toLowerCase(),base=file.name.replace(/\.[^.]+$/,'');
+  mods=null;modsDirty=false;
   try{
     if(n.endsWith('.png')){
       const b=new Uint8Array(await file.arrayBuffer());
@@ -149,7 +161,9 @@ async function load(file){
       if(typeof JSZip==='undefined')return alert('JSZip failed to load (offline?). CHARX needs it.');
       const z=await JSZip.loadAsync(await file.arrayBuffer());
       const f=z.file('card.json');if(!f)return alert('No card.json inside this CHARX.');
-      const c=JSON.parse(await f.async('string'));zip=z;pngBytes=null;setCard(c,'charx',base);
+      const c=JSON.parse(await f.async('string'));
+      const mf=z.file('lumiverse_modules.json');mods=mf?JSON.parse(await mf.async('string')):null;
+      zip=z;pngBytes=null;setCard(c,'charx',base);
     }else{
       const c=JSON.parse(await file.text());zip=null;pngBytes=null;setCard(c,'json',base);
     }
@@ -166,7 +180,7 @@ addEventListener('drop',async e=>{
 });
 $('blank').onclick=()=>{
   if(dirty&&!confirm('Discard unsaved changes?'))return;
-  zip=typeof JSZip!=='undefined'?new JSZip():null;pngBytes=null;
+  zip=typeof JSZip!=='undefined'?new JSZip():null;pngBytes=null;mods=null;modsDirty=false;
   setCard(blankCard(),zip?'charx':'json','new_character');
   loadImages();
 };
@@ -186,15 +200,16 @@ $('exp').onclick=async()=>{
       download(writePngCard(pngBytes,JSON.stringify(card),JSON.stringify(v2)),safe()+'.png');
     }else if(fmt==='charx'){
       zip.file('card.json',JSON.stringify(card,null,2));
+      if(modsDirty&&mods)zip.file('lumiverse_modules.json',JSON.stringify(mods,null,2));
       download(await zip.generateAsync({type:'blob',compression:'DEFLATE'}),safe()+'.charx');
     }else $('expJson').onclick();
-    dirty=false;
+    dirty=false;clearDraft();
   }catch(err){alert('Export failed: '+err.message)}
 };
 
 /* ---------- editor ---------- */
 const D=()=>card.data;
-const touch=()=>{dirty=true};
+function touch(){dirty=true;updInfo();scheduleSave()}
 const gt=()=>{const g=D().extensions&&D().extensions.greeting_tools;return g&&typeof g==='object'?g:null};
 function altTitle(i){const g=gt();const id=g&&g.indexMap&&g.indexMap[i];return id&&g.greetings&&g.greetings[id]?g.greetings[id].title||'':null}
 function setAltTitle(i,v){const g=gt();const id=g.indexMap[i];g.greetings[id].title=v}
@@ -210,33 +225,123 @@ function text(key,label){
   return mk('div',{class:'f'},mk('label',{},label),mk('input',{type:'text',value:D()[key]??'',oninput:e=>{D()[key]=e.target.value;touch()}}));
 }
 
-let tab='profile',imgs=[],cur=0;
-const TABS=[['profile','Profile'],['desc','Description'],['greet','Greetings'],['prompts','Prompts']];
+let tab='profile',imgs=[],cur=0,mods=null,modsDirty=false;
+const TABS=[['profile','Profile'],['desc','Description'],['greet','Greetings'],['prompts','Prompts'],['lore','Lorebook']];
+const MIME={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif'};
+const NOF={createFolders:false};
+const KIND={main:'Main avatar',alt:'Alt avatar',gallery:'Gallery',card:'Card image'};
 
-async function loadImages(){
+async function loadImages(keep){
+  const prev=cur;
   imgs.forEach(i=>URL.revokeObjectURL(i.url));imgs=[];cur=0;
   if(fmt==='png'&&pngBytes){
-    imgs=[{name:fname+'.png',url:URL.createObjectURL(new Blob([pngBytes],{type:'image/png'}))}];
+    imgs=[{name:fname+'.png',kind:'card',url:URL.createObjectURL(new Blob([pngBytes],{type:'image/png'}))}];
   }else if(fmt==='charx'&&zip){
+    const alts=new Map(((mods&&mods.alternate_avatars)||[]).map(a=>[a.path,a.label]));
     const names=Object.keys(zip.files).filter(n=>!zip.files[n].dir&&/^assets\/.*\.(png|jpe?g|webp|gif)$/i.test(n));
-    const isMain=n=>/icon\/image\/main\./.test(n)?1:0;
-    names.sort((a,b)=>(isMain(b)-isMain(a))||a.localeCompare(b));
+    const rank=n=>/icon\/image\/main\./.test(n)?0:alts.has(n)?1:2;
+    names.sort((a,b)=>(rank(a)-rank(b))||a.localeCompare(b,undefined,{numeric:true}));
     for(const n of names){
-      const ext=n.split('.').pop().toLowerCase();
-      const blob=new Blob([await zip.file(n).async('uint8array')],{type:'image/'+(ext==='jpg'?'jpeg':ext)});
-      imgs.push({name:n.replace(/^assets\//,''),url:URL.createObjectURL(blob)});
+      const ext=n.split('.').pop().toLowerCase(),r=rank(n);
+      const blob=new Blob([await zip.file(n).async('uint8array')],{type:MIME[ext]||'image/'+ext});
+      imgs.push({name:n.replace(/^assets\//,''),path:n,kind:r===0?'main':r===1?'alt':'gallery',label:alts.get(n)||'',url:URL.createObjectURL(blob)});
     }
   }
+  if(keep)cur=Math.max(0,Math.min(prev,imgs.length-1));
   render();
+}
+
+function pickImage(){return pickFile('image/*')}
+function pickFile(accept){
+  return new Promise(res=>{
+    const i=mk('input',{type:'file',accept});
+    i.onchange=()=>res(i.files[0]||null);
+    i.addEventListener('cancel',()=>res(null));
+    i.click();
+  });
+}
+// returns bytes of file as the given mime; square = crop to centered square and resize
+async function toFormat(file,mime,square){
+  if(file.type===mime&&!square)return new Uint8Array(await file.arrayBuffer());
+  const bmp=await createImageBitmap(file);
+  let sx=0,sy=0,sw=bmp.width,sh=bmp.height,w=sw,h=sh;
+  if(square){const m=Math.min(sw,sh);sx=(sw-m)>>1;sy=(sh-m)>>1;sw=sh=m;w=h=square}
+  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  const g=cv.getContext('2d');
+  if(mime==='image/jpeg'){g.fillStyle='#fff';g.fillRect(0,0,w,h)}
+  g.drawImage(bmp,sx,sy,sw,sh,0,0,w,h);
+  const blob=await new Promise(r=>cv.toBlob(r,mime,.92));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+// keep png/jpg/webp as they are, convert anything else to png
+async function asKnown(f){
+  const ext={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'}[f.type];
+  return ext?{ext,bytes:new Uint8Array(await f.arrayBuffer())}:{ext:'png',bytes:await toFormat(f,'image/png')};
+}
+async function replaceImage(){
+  const im=imgs[cur],f=await pickImage();if(!f)return;
+  try{
+    if(fmt==='png'){pngBytes=await toFormat(f,'image/png')}
+    else{
+      const mime=MIME[im.path.split('.').pop().toLowerCase()]||'image/png';
+      zip.file(im.path,await toFormat(f,mime,im.kind==='alt'?512:0),NOF);
+    }
+    dirty=true;await loadImages(true);
+  }catch(e){alert('Could not use that image: '+e.message)}
+}
+async function addImage(kind){
+  const f=await pickImage();if(!f)return;
+  try{
+    if(kind==='main'){
+      const{ext,bytes}=await asKnown(f);
+      zip.file('assets/icon/image/main.'+ext,bytes,NOF);
+    }else if(kind==='gallery'){
+      const{ext,bytes}=await asKnown(f);
+      let n=1;for(const p of Object.keys(zip.files)){const m=p.match(/gallery_image-(\d+)\./);if(m)n=Math.max(n,+m[1]+1)}
+      zip.file('assets/other/image/gallery_image-'+n+'.'+ext,bytes,NOF);
+    }else{
+      const label=prompt('Label for this alt avatar?','Alt');if(label===null)return;
+      const id=crypto.randomUUID(),path='assets/icon/image/'+id+'.png';
+      zip.file(path,await toFormat(f,'image/png',512),NOF);
+      mods=mods||{version:1,world_books:[],alternate_avatars:[]};
+      (mods.alternate_avatars=mods.alternate_avatars||[]).push({id,label:label||'Alt',path});
+      modsDirty=true;
+    }
+    dirty=true;await loadImages(true);
+    if(kind!=='main'){const l=imgs.map(i=>i.kind).lastIndexOf(kind);if(l>=0){cur=l;render()}}
+  }catch(e){alert('Could not use that image: '+e.message)}
+}
+
+async function deleteImage(){
+  const im=imgs[cur];if(!im||!im.path)return;
+  const gb=(D().extensions&&D().extensions.greeting_backgrounds)||{},uses=[];
+  if(im.kind==='gallery'){const ref=galleryRef(im);if(ref)for(const k of Object.keys(gb))if(gb[k]===ref)uses.push(k)}
+  const who=uses.map(k=>+k===0?'the main greeting':'alternate greeting #'+k).join(', ');
+  if(!confirm('Delete '+im.name+'?'+(uses.length?'\nIt is attached to '+who+'. That link will be removed.':'')))return;
+  uses.forEach(k=>delete gb[k]);
+  if(im.kind==='alt'&&mods&&mods.alternate_avatars){mods.alternate_avatars=mods.alternate_avatars.filter(a=>a.path!==im.path);modsDirty=true}
+  zip.remove(im.path);dirty=true;await loadImages(true);
 }
 
 function picPanel(){
   const p=mk('aside',{class:'pic'}),im=imgs[cur];
   p.append(im?mk('img',{class:'big',src:im.url,alt:D().name||''}):mk('div',{class:'noimg'},'No image'));
   if(imgs.length>1)p.append(mk('div',{class:'thumbs'},imgs.map((x,i)=>
-    mk('img',{src:x.url,title:x.name,class:i===cur?'on':'',onclick:()=>{cur=i;render()}}))));
+    mk('img',{src:x.url,title:KIND[x.kind]+(x.label?' · '+x.label:'')+' · '+x.name,class:i===cur?'on':'',onclick:()=>{cur=i;render()}}))));
   p.append(mk('div',{class:'cap'},D().name||'Unnamed'));
-  if(imgs.length>1)p.append(mk('div',{class:'hint'},'Preview only. Images are kept as-is.'));
+  if(im)p.append(mk('div',{class:'hint'},KIND[im.kind]+(im.label?' · '+im.label:'')+' · '+im.name));
+  if(im&&im.kind==='alt'&&mods&&mods.alternate_avatars){
+    const a=mods.alternate_avatars.find(x=>x.path===im.path);
+    if(a)p.append(mk('div',{class:'f'},mk('label',{},'Avatar label'),
+      mk('input',{type:'text',value:a.label||'',oninput:e=>{a.label=e.target.value;im.label=e.target.value;modsDirty=true;dirty=true}})));
+  }
+  const b=mk('div',{class:'imgbtns'});
+  if(fmt==='png')b.append(mk('button',{onclick:replaceImage},'Replace image'));
+  else if(fmt==='charx'&&zip){
+    if(im)b.append(mk('button',{onclick:replaceImage},'Replace'),mk('button',{onclick:()=>addImage('gallery')},'+ Gallery'),mk('button',{onclick:()=>addImage('alt')},'+ Alt avatar'),mk('button',{class:'danger',onclick:deleteImage},'Delete'));
+    else b.append(mk('button',{onclick:()=>addImage('main')},'Set main image'));
+  }
+  p.append(b);
   return p;
 }
 
@@ -252,8 +357,10 @@ function render(){
       text('creator','Creator'),
       area('creator_notes','Creator notes',6));
     const cb=d.character_book;
-    if(cb&&Array.isArray(cb.entries))body.append(mk('p',{class:'hint'},'Embedded lorebook: '+cb.entries.length+' entries (kept as-is; edit it in the Lorebook Editor).'));
+    if(cb&&Array.isArray(cb.entries))body.append(mk('p',{class:'hint'},'Embedded lorebook: '+cb.entries.length+' entries (kept as-is; see the Lorebook tab).'));
     if(zip)body.append(mk('p',{class:'hint'},'CHARX contains '+Object.keys(zip.files).filter(n=>!zip.files[n].dir).length+' file(s); all kept on export.'));
+  }else if(tab==='lore'){
+    body.append(...lorePanel());
   }else if(tab==='desc'){
     body.append(area('description','Description',14),area('personality','Personality',5),area('scenario','Scenario',5));
   }else if(tab==='greet'){
@@ -261,6 +368,7 @@ function render(){
     if(g&&g.mainGreeting)body.append(mk('div',{class:'f'},mk('label',{},'Main greeting title'),
       mk('input',{type:'text',value:g.mainGreeting.title||'',oninput:e=>{g.mainGreeting.title=e.target.value;touch()}})));
     body.append(area('first_mes','First message',9));
+    if(zip)body.append(bgPicker(0));
     const altBox=mk('div');
     body.append(mk('h3',{},'Alternate greetings'),altBox,
       mk('button',{onclick:()=>{(d.alternate_greetings=d.alternate_greetings||[]).push('');touch();renderAlts(altBox)}},'+ Add greeting'));
@@ -271,7 +379,73 @@ function render(){
   const pane=mk('div',{class:'pane'},
     mk('div',{class:'tabs'},TABS.map(([k,l])=>mk('button',{class:k===tab?'on':'',onclick:()=>{tab=k;render();ed.scrollTop=0}},l))),
     body);
+  if(pendingDraft)ed.append(mk('div',{class:'banner'},
+    mk('span',{},'Unsaved edits from '+new Date(pendingDraft.t).toLocaleString()+' were found for this card. Restore them? (Images aren\'t kept in drafts.)'),
+    mk('button',{onclick:restoreDraft},'Restore'),
+    mk('button',{onclick:()=>{clearDraft();pendingDraft=null;render()}},'Discard')));
   ed.append(mk('div',{class:'layout'},picPanel(),pane));
+}
+
+function remapIdx(obj,fn,off){ // keys are alt index + off; fn: old alt index -> new index or null
+  const out={};
+  for(const k of Object.keys(obj)){
+    const n=+k;
+    if(Number.isNaN(n)||n<off){out[k]=obj[k];continue}
+    const m=fn(n-off);if(m!=null)out[m+off]=obj[k];
+  }
+  return out;
+}
+function altOp(fn){
+  const d=D(),g=gt();
+  if(g&&g.indexMap)g.indexMap=remapIdx(g.indexMap,fn,0);
+  if(d.extensions&&d.extensions.greeting_backgrounds)d.extensions.greeting_backgrounds=remapIdx(d.extensions.greeting_backgrounds,fn,1);
+}
+function finishAlt(){touch();const ed=$('ed'),st=ed.scrollTop;render();ed.scrollTop=st}
+function moveAlt(i,dir){
+  const a=D().alternate_greetings,j=i+dir;
+  [a[i],a[j]]=[a[j],a[i]];
+  altOp(x=>x===i?j:x===j?i:x);finishAlt();
+}
+function dupAlt(i){
+  const d=D(),g=gt(),a=d.alternate_greetings;
+  a.splice(i+1,0,a[i]);
+  altOp(x=>x>i?x+1:x);
+  if(g&&g.indexMap&&g.indexMap[i]){
+    const old=g.indexMap[i],id='g_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+    g.greetings[id]={id,title:((g.greetings[old]&&g.greetings[old].title)||'')+' (copy)'};
+    g.indexMap[i+1]=id;
+  }
+  const gb=d.extensions&&d.extensions.greeting_backgrounds;
+  if(gb&&gb[i+1]!=null)gb[i+2]=gb[i+1];
+  finishAlt();
+}
+function delAlt(i){
+  if(!confirm('Delete greeting #'+(i+1)+'?'))return;
+  const g=gt();
+  if(g&&g.indexMap&&g.greetings&&g.indexMap[i])delete g.greetings[g.indexMap[i]];
+  D().alternate_greetings.splice(i,1);
+  altOp(x=>x===i?null:x>i?x-1:x);finishAlt();
+}
+
+// greeting image picker. key 0 = main greeting, key n = alternate greeting n
+function galleryRef(im){const m=im.name.match(/gallery_image-(\d+)\./);return m?'gallery://image-'+m[1]:null}
+function findGallery(ref){return imgs.find(i=>i.kind==='gallery'&&galleryRef(i)===ref)}
+function setBg(key,v){
+  const ext=D().extensions=D().extensions||{},gb=ext.greeting_backgrounds=ext.greeting_backgrounds||{};
+  if(v)gb[key]=v;else delete gb[key];
+  touch();
+}
+function bgPicker(key){
+  const cur=((D().extensions||{}).greeting_backgrounds||{})[key]||'';
+  const opts=[['','None']];
+  for(const im of imgs){const ref=im.kind==='gallery'&&galleryRef(im);if(ref)opts.push([ref,im.name.replace(/^other\/image\//,'')])}
+  if(cur&&!opts.some(o=>o[0]===cur))opts.push([cur,cur+' (missing)']);
+  const prev=mk('img',{class:'bgprev'});
+  const upd=v=>{const im=findGallery(v);prev.style.display=im?'':'none';if(im)prev.src=im.url};
+  const sel=mk('select',{onchange:e=>{setBg(key,e.target.value);upd(e.target.value)}},
+    opts.map(([v,l])=>mk('option',{value:v,selected:v===cur},l)));
+  upd(cur);
+  return mk('div',{class:'f'},mk('label',{},'Greeting image'+(opts.length===1&&!cur?' (add gallery images on the left first)':'')),mk('div',{class:'bgrow'},sel,prev));
 }
 
 function renderAlts(box){
@@ -279,27 +453,120 @@ function renderAlts(box){
   const arr=D().alternate_greetings||[];
   arr.forEach((txt,i)=>{
     const t=altTitle(i);
-    const ta=mk('textarea',{rows:5,value:txt,oninput:e=>{arr[i]=e.target.value;touch()}});
     box.append(mk('div',{class:'alt'},
       mk('div',{class:'top'},mk('b',{},'#'+(i+1)),
         t===null?mk('span',{class:'hint grow'},''):mk('input',{type:'text',placeholder:'Title',value:t,oninput:e=>{setAltTitle(i,e.target.value);touch()}}),
-        mk('button',{class:'danger',onclick:()=>delAlt(i,box)},'Delete')),
-      ta));
+        mk('button',{disabled:i===0,onclick:()=>moveAlt(i,-1)},'↑'),
+        mk('button',{disabled:i===arr.length-1,onclick:()=>moveAlt(i,1)},'↓'),
+        mk('button',{onclick:()=>dupAlt(i)},'Duplicate'),
+        mk('button',{class:'danger',onclick:()=>delAlt(i)},'Delete')),
+      mk('textarea',{rows:5,value:txt,oninput:e=>{arr[i]=e.target.value;touch()}}),
+      zip?bgPicker(i+1):null));
   });
   if(!arr.length)box.append(mk('p',{class:'hint'},'None yet.'));
 }
-function delAlt(i,box){
-  if(!confirm('Delete greeting #'+(i+1)+'?'))return;
-  const d=D(),g=gt();
-  d.alternate_greetings.splice(i,1);
-  if(g&&g.indexMap){
-    const old=g.indexMap,nm={};
-    if(old[i]&&g.greetings)delete g.greetings[old[i]];
-    for(const k of Object.keys(old)){const n=+k;if(n<i)nm[n]=old[k];else if(n>i)nm[n-1]=old[k]}
-    g.indexMap=nm;
-  }
-  touch();renderAlts(box);
+
+/* ---------- lorebook inside the card ---------- */
+const MIRRORED=['priority','sticky','cooldown','delay','selective_logic','use_probability','use_regex','prevent_recursion','exclude_recursion','delay_until_recursion','group_override','group_weight','probability','scan_depth','automation_id','vectorized','uid'];
+function toV3Entry(n,i){
+  const x={...(n.extensions||{})};
+  for(const k of MIRRORED)x[k]=n[k];
+  if(n.group_name)x.group=n.group_name;
+  return{id:i,keys:n.key||[],secondary_keys:n.keysecondary||[],content:n.content||'',comment:n.comment||'',enabled:!n.disabled,
+    insertion_order:n.order_value??0,position:n.position??0,depth:n.depth??4,selective:!!n.selective,constant:!!n.constant,
+    case_sensitive:!!n.case_sensitive,match_whole_words:!!n.match_whole_words,extensions:x};
 }
+function fromV3Entry(e){
+  const x=e.extensions||{},rest={};
+  for(const k of Object.keys(x))if(!MIRRORED.includes(k)&&k!=='group')rest[k]=x[k];
+  return{uid:x.uid||crypto.randomUUID(),key:e.keys||[],keysecondary:e.secondary_keys||[],content:e.content||'',comment:e.comment||'',
+    position:typeof e.position==='number'?e.position:({before_char:0,after_char:1}[e.position]??0),depth:e.depth??4,role:null,
+    order_value:e.insertion_order??0,selective:!!e.selective,constant:!!e.constant,disabled:e.enabled===false,
+    group_name:x.group||'',group_override:!!x.group_override,group_weight:x.group_weight??100,probability:x.probability??100,
+    scan_depth:x.scan_depth??null,case_sensitive:!!e.case_sensitive,match_whole_words:!!e.match_whole_words,automation_id:x.automation_id??null,
+    extensions:rest,use_regex:!!x.use_regex,prevent_recursion:!!x.prevent_recursion,exclude_recursion:!!x.exclude_recursion,
+    delay_until_recursion:!!x.delay_until_recursion,priority:x.priority??10,sticky:x.sticky??0,cooldown:x.cooldown??0,delay:x.delay??0,
+    selective_logic:x.selective_logic??0,use_probability:x.use_probability??true,vectorized:!!x.vectorized,exclude_greeting:0,revision:1,
+    folder:'',tags:[],outlet_name:null,wi_marker:null,wi_marker_side:null};
+}
+function loreInfo(){
+  const wb=mods&&mods.world_books&&mods.world_books.length?mods.world_books:null;
+  if(wb)return{name:wb[0].name,n:(wb[0].entries||[]).length,books:wb.length};
+  const cb=D().character_book;
+  if(cb&&Array.isArray(cb.entries))return{name:cb.name,n:cb.entries.length,books:1};
+  return null;
+}
+function lorePanel(){
+  const info=loreInfo(),box=mk('div',{class:'lorebox'});
+  if(info){
+    box.append(mk('b',{},info.name||'Unnamed lorebook'),
+      mk('div',{class:'hint'},info.n+' entries'+(info.books>1?' · this card holds '+info.books+' lorebooks':'')),
+      mk('div',{class:'row2'},mk('button',{onclick:downloadLore},'Download as world book'),mk('button',{onclick:attachLore},'Replace…'),mk('button',{class:'danger',onclick:removeLore},'Remove')));
+  }else box.append(mk('div',{},'No lorebook attached.'),mk('div',{class:'row2'},mk('button',{onclick:attachLore},'Attach world book…')));
+  return[box,mk('p',{class:'hint'},'Downloads are Lumiverse world books you can open in the ',mk('a',{href:'lorebook.html'},'Lorebook Editor'),'. Attaching takes a Lumiverse world book JSON.')];
+}
+function downloadLore(){
+  const d=D();let book;
+  if(mods&&mods.world_books&&mods.world_books.length){
+    let i=0;
+    if(mods.world_books.length>1){
+      const a=prompt('Which lorebook? '+mods.world_books.map((w,k)=>(k+1)+' = '+w.name).join(', '),'1');if(a===null)return;
+      i=Math.max(0,Math.min(mods.world_books.length-1,(+a||1)-1));
+    }
+    book={...mods.world_books[i]};
+  }else{
+    const cb=d.character_book;
+    book={version:1,type:'lumiverse_world_book',name:cb.name||(d.name||'Card')+' lorebook',description:cb.description||'',metadata:{},entries:cb.entries.map(fromV3Entry)};
+  }
+  book.exported_at=Math.floor(Date.now()/1000);
+  download(new Blob([JSON.stringify(book,null,2)],{type:'application/json'}),(book.name||'lorebook').replace(/[^\w\-]+/g,'_')+'_lumiverse.json');
+}
+async function attachLore(){
+  const f=await pickFile('.json,application/json');if(!f)return;
+  let b;try{b=JSON.parse(await f.text())}catch(e){return alert('Not valid JSON: '+e.message)}
+  if(!b||!Array.isArray(b.entries))return alert('That doesn\'t look like a Lumiverse world book (no entries list).');
+  const info=loreInfo();
+  if(info&&!confirm('Replace the embedded lorebook'+(info.books>1?'s ('+info.books+')':' "'+(info.name||'')+'"')+' with "'+(b.name||f.name)+'" ('+b.entries.length+' entries)?'))return;
+  b.version=b.version||1;b.type=b.type||'lumiverse_world_book';
+  b.entries.forEach(e=>{if(typeof e.position!=='number')e.position=({before_char:0,after_char:1}[e.position]??0)});
+  const d=D();
+  d.character_book={...(d.character_book||{}),name:b.name||'Lorebook',description:b.description||'',entries:b.entries.map(toV3Entry)};
+  if(fmt==='charx'){mods=mods||{version:1,world_books:[],alternate_avatars:[]};mods.world_books=[b];modsDirty=true}
+  touch();render();
+}
+function removeLore(){
+  if(!confirm('Remove the embedded lorebook from this card?'))return;
+  delete D().character_book;
+  if(mods&&mods.world_books){mods.world_books=[];modsDirty=true}
+  touch();render();
+}
+
+/* ---------- token total, drafts, Ctrl+S ---------- */
+let infoBase='',pendingDraft=null,saveT=null;
+const TOK_FIELDS=['description','personality','scenario','first_mes','mes_example','system_prompt','post_history_instructions'];
+function updInfo(){
+  if(!card)return;
+  let c=0;for(const k of TOK_FIELDS)c+=(D()[k]||'').length;
+  $('info').textContent=infoBase+' · ~'+Math.ceil(c/4)+' tokens';
+  $('info').title='Rough estimate (characters ÷ 4) of description, personality, scenario, first message, examples and prompts';
+}
+const dKey=()=>'lumiverse-cards-draft:'+fmt+':'+fname;
+function scheduleSave(){
+  clearTimeout(saveT);
+  saveT=setTimeout(()=>{if(!dirty||!card)return;try{localStorage.setItem(dKey(),JSON.stringify({t:Date.now(),card,mods:modsDirty?mods:null}))}catch(e){}},1500);
+}
+function clearDraft(){clearTimeout(saveT);try{localStorage.removeItem(dKey())}catch(e){}}
+function findDraft(){
+  try{const raw=localStorage.getItem(dKey());if(!raw)return null;const d=JSON.parse(raw);return JSON.stringify(d.card)===JSON.stringify(card)?null:d}catch(e){return null}
+}
+function restoreDraft(){
+  card=pendingDraft.card;
+  if(pendingDraft.mods){mods=pendingDraft.mods;modsDirty=true}
+  pendingDraft=null;dirty=true;updInfo();loadImages(true);
+}
+addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();if(card)$('exp').click()}
+});
 </script>
 </body>
 </html>
